@@ -115,3 +115,24 @@ async def deduplicate(
         skipped=result.skipped,
         duration_seconds=round(duration, 2),
     )
+
+
+@app.post("/classify", response_model=PipelineResponse)
+async def classify(
+    db: AsyncSession = Depends(get_db),
+    settings: Settings = Depends(get_app_settings),
+):
+    """Run the classification pipeline: SLM categorization + entity extraction."""
+    from src.pipelines.classify import run_classify
+
+    start = time.time()
+    result = await run_classify(db, settings)
+    duration = time.time() - start
+
+    return PipelineResponse(
+        stage=result.stage,
+        processed=result.processed,
+        failed=result.failed,
+        skipped=result.skipped,
+        duration_seconds=round(duration, 2),
+    )
