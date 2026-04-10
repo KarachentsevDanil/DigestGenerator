@@ -48,6 +48,7 @@ class DigestCandidate:
     confidence: float
     source_name: str
     cluster_size: int
+    novelty: float = 0.5
 
     @property
     def summary(self) -> str:
@@ -179,6 +180,11 @@ async def select_items(
 
             cluster_size = await _get_cluster_size(db, msg)
 
+            # Compute novelty score
+            from src.knowledge.tracker import compute_novelty
+
+            novelty = await compute_novelty(db, user.id, msg)
+
             candidates.append(
                 DigestCandidate(
                     message=msg,
@@ -187,17 +193,30 @@ async def select_items(
                     confidence=cat_score,
                     source_name=source_name,
                     cluster_size=cluster_size,
+                    novelty=novelty,
                 )
             )
 
-        # Sort by ranking
+        # Sort by composite ranking with novelty
         if digest_type == "daily":
+            # daily_score = 0.4*confidence + 0.3*relevance + 0.3*novelty
             candidates.sort(
-                key=lambda c: (c.confidence, c.relevance_score), reverse=True
+                key=lambda c: (
+                    0.4 * c.confidence
+                    + 0.3 * c.relevance_score
+                    + 0.3 * c.novelty
+                ),
+                reverse=True,
             )
         else:
+            # weekly_score = 0.35*confidence + 0.35*relevance + 0.3*novelty
             candidates.sort(
-                key=lambda c: c.relevance_score * c.confidence, reverse=True
+                key=lambda c: (
+                    0.35 * c.confidence
+                    + 0.35 * c.relevance_score
+                    + 0.3 * c.novelty
+                ),
+                reverse=True,
             )
 
         # Take top_k
@@ -313,12 +332,22 @@ async def generate_user_digest(
 
     await db.commit()
 
+    # Update user knowledge graph with entities from delivered items
+    from src.knowledge.tracker import update_user_knowledge
+
+    all_digest_items_result = await db.execute(
+        select(DigestItem).where(DigestItem.digest_id == digest.id)
+    )
+    all_digest_items = list(all_digest_items_result.scalars().all())
+    new_entities = await update_user_knowledge(db, user.id, all_digest_items)
+
     log.info(
         "digest_generated",
         user_id=user.id,
         type=digest_type,
         items=total_items,
         messages_sent=len(message_ids),
+        new_entities=new_entities,
     )
 
     return True

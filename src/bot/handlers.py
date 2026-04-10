@@ -11,7 +11,7 @@ from telegram.ext import (
     ContextTypes,
 )
 
-from src.db.models import Category, Source, User, UserCategory, UserSource
+from src.db.models import Category, Source, User, UserCategory, UserKnowledge, UserSource
 from src.db.session import get_session
 
 log = structlog.get_logger()
@@ -481,6 +481,118 @@ async def digest_handler(
         await db.close()
 
 
+async def knowledge_handler(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """Handle /knowledge — show knowledge graph stats or search."""
+    db = await _get_db()
+    try:
+        user = await _get_or_create_user(db, update)
+        query_text = " ".join(context.args) if context.args else ""
+
+        if query_text:
+            # Search for specific entity
+            search = f"%{query_text}%"
+            result = await db.execute(
+                select(UserKnowledge)
+                .where(
+                    UserKnowledge.user_id == user.id,
+                    UserKnowledge.entity_name.ilike(search),
+                )
+                .limit(5)
+            )
+            entities = list(result.scalars().all())
+
+            if not entities:
+                await update.message.reply_text(
+                    f"No knowledge about '{query_text}'"
+                )
+                return
+
+            lines = []
+            for e in entities:
+                lines.append(
+                    f"{e.entity_name} ({e.entity_type or 'unknown'})\n"
+                    f"  First seen: {e.first_seen_at.strftime('%Y-%m-%d')}\n"
+                    f"  Last seen: {e.last_seen_at.strftime('%Y-%m-%d')}\n"
+                    f"  Encountered: {e.encounter_count} times\n"
+                    f"  Categories: {', '.join(e.categories or [])}"
+                )
+            await update.message.reply_text("\n\n".join(lines))
+        else:
+            # Show stats
+            from sqlalchemy import func as sa_func
+
+            total_result = await db.execute(
+                select(sa_func.count(UserKnowledge.id)).where(
+                    UserKnowledge.user_id == user.id
+                )
+            )
+            total = total_result.scalar_one()
+
+            if total == 0:
+                await update.message.reply_text(
+                    "Your knowledge graph is empty. "
+                    "It will grow as you receive digests."
+                )
+                return
+
+            # Recent entities
+            recent_result = await db.execute(
+                select(UserKnowledge)
+                .where(UserKnowledge.user_id == user.id)
+                .order_by(UserKnowledge.last_seen_at.desc())
+                .limit(5)
+            )
+            recent = list(recent_result.scalars().all())
+
+            lines = [f"Your Knowledge Graph\n\nTotal entities: {total}\n\nRecent:"]
+            for e in recent:
+                lines.append(
+                    f"- {e.entity_name} ({e.entity_type or '?'}) "
+                    f"— seen {e.encounter_count} times"
+                )
+            await update.message.reply_text("\n".join(lines))
+    finally:
+        await db.close()
+
+
+async def forget_handler(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """Handle /forget <entity> — remove entity from knowledge graph."""
+    db = await _get_db()
+    try:
+        user = await _get_or_create_user(db, update)
+        name = " ".join(context.args) if context.args else ""
+
+        if not name:
+            await update.message.reply_text("Usage: /forget Entity Name")
+            return
+
+        canonical = slugify(name, separator="_")
+        result = await db.execute(
+            select(UserKnowledge).where(
+                UserKnowledge.user_id == user.id,
+                UserKnowledge.canonical_name == canonical,
+            )
+        )
+        entity = result.scalar_one_or_none()
+
+        if not entity:
+            await update.message.reply_text(f"No knowledge of '{name}'")
+            return
+
+        await db.delete(entity)
+        await db.commit()
+        await update.message.reply_text(
+            f"Forgot '{entity.entity_name}'. "
+            f"It will appear as new in future digests."
+        )
+    finally:
+        await db.close()
+
+
 def register_handlers(application: Application) -> None:
     """Register all bot command handlers."""
     application.add_handler(CommandHandler("start", start_handler))
@@ -496,3 +608,5 @@ def register_handlers(application: Application) -> None:
     application.add_handler(CommandHandler("settings", settings_handler))
     application.add_handler(CommandHandler("stats", stats_handler))
     application.add_handler(CommandHandler("digest", digest_handler))
+    application.add_handler(CommandHandler("knowledge", knowledge_handler))
+    application.add_handler(CommandHandler("forget", forget_handler))
