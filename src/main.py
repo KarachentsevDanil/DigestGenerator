@@ -4,7 +4,7 @@ import time
 from contextlib import asynccontextmanager
 
 import structlog
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, Query, Request, Response
 from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -136,3 +136,48 @@ async def classify(
         skipped=result.skipped,
         duration_seconds=round(duration, 2),
     )
+
+
+@app.post("/generate-digest", response_model=PipelineResponse)
+async def generate_digest(
+    digest_type: str = Query(default="daily", pattern="^(daily|weekly)$"),
+    db: AsyncSession = Depends(get_db),
+    settings: Settings = Depends(get_app_settings),
+):
+    """Generate and deliver digests for eligible users."""
+    from src.pipelines.digest import run_generate_digest
+
+    start = time.time()
+    result = await run_generate_digest(db, settings, digest_type)
+    duration = time.time() - start
+
+    return PipelineResponse(
+        stage=result.stage,
+        processed=result.processed,
+        failed=result.failed,
+        skipped=result.skipped,
+        duration_seconds=round(duration, 2),
+    )
+
+
+@app.post("/webhook")
+async def webhook(request: Request):
+    """Telegram Bot API webhook receiver."""
+    from telegram import Update as TGUpdate
+    from telegram.ext import Application
+
+    from src.bot.handlers import register_handlers
+
+    settings = get_settings()
+    if not settings.telegram_bot_token:
+        return Response(status_code=503)
+
+    body = await request.json()
+    bot_app = Application.builder().token(settings.telegram_bot_token).build()
+    register_handlers(bot_app)
+
+    async with bot_app:
+        update = TGUpdate.de_json(body, bot_app.bot)
+        await bot_app.process_update(update)
+
+    return Response(status_code=200)

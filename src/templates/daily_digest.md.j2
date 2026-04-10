@@ -1,0 +1,11 @@
+*Your Daily Digest — {{ date }}*
+
+{% for cat_name, items in categories.items() %}
+*{{ emojis.get(cat_name, '📌') }} {{ cat_name }}* \({{ items|length }}\)
+{% for item in items %}
+{{ '🔴' if item.relevance_score >= 0.7 else '🟡' if item.relevance_score >= 0.4 else '⚪' }} {{ item.summary }}
+{% if item.content_url %}[source]({{ item.content_url }}){% endif %} _via {{ item.source_name }}_{% if item.cluster_size > 1 %} _\(\+{{ item.cluster_size - 1 }} similar\)_{% endif %}
+
+{% endfor %}
+{% endfor %}
+_{{ total_items }} items from {{ source_count }} sources · {{ dupes_removed }} duplicates filtered_
