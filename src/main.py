@@ -94,3 +94,24 @@ async def scrape(
         skipped=result.skipped,
         duration_seconds=round(duration, 2),
     )
+
+
+@app.post("/deduplicate", response_model=PipelineResponse)
+async def deduplicate(
+    db: AsyncSession = Depends(get_db),
+    settings: Settings = Depends(get_app_settings),
+):
+    """Run the deduplication pipeline: MinHash LSH + cosine + SLM."""
+    from src.pipelines.deduplicate import run_deduplicate
+
+    start = time.time()
+    result = await run_deduplicate(db, settings)
+    duration = time.time() - start
+
+    return PipelineResponse(
+        stage=result.stage,
+        processed=result.processed,
+        failed=result.failed,
+        skipped=result.skipped,
+        duration_seconds=round(duration, 2),
+    )
