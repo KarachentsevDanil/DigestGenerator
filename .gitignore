@@ -205,3 +205,9 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# Project runtime data
+data/digest.db
+data/chromadb/*.sqlite3
+data/sessions/*.session
+.env
