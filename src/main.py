@@ -1,14 +1,25 @@
 from __future__ import annotations
 
+import time
 from contextlib import asynccontextmanager
 
 import structlog
 from fastapi import Depends, FastAPI
+from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.config import get_settings
+from src.config import Settings, get_settings
 from src.dependencies import get_app_settings, get_db
+
+
+class PipelineResponse(BaseModel):
+    run_id: int | None = None
+    stage: str
+    processed: int
+    failed: int
+    skipped: int
+    duration_seconds: float
 
 
 def _configure_logging() -> None:
@@ -62,3 +73,24 @@ async def health(db: AsyncSession = Depends(get_db)):
 async def stats(settings=Depends(get_app_settings)):
     """Pipeline statistics. Placeholder — implemented in Phase 6."""
     return {"message": "not implemented"}
+
+
+@app.post("/scrape", response_model=PipelineResponse)
+async def scrape(
+    db: AsyncSession = Depends(get_db),
+    settings: Settings = Depends(get_app_settings),
+):
+    """Run the scrape pipeline: fetch messages, embed, store."""
+    from src.pipelines.scrape import run_scrape
+
+    start = time.time()
+    result = await run_scrape(db, settings)
+    duration = time.time() - start
+
+    return PipelineResponse(
+        stage=result.stage,
+        processed=result.processed,
+        failed=result.failed,
+        skipped=result.skipped,
+        duration_seconds=round(duration, 2),
+    )
