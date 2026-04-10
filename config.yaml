@@ -1,0 +1,27 @@
+ollama:
+  base_url: http://localhost:11434
+  model: gemma4:e4
+  timeout: 60
+  temperature: 0.1
+
+embeddings:
+  model: all-MiniLM-L6-v2
+
+dedup:
+  minhash_threshold: 0.7
+  minhash_num_perm: 128
+  cosine_definite_threshold: 0.88
+  cosine_borderline_threshold: 0.80
+  window_hours: 72
+
+scrape:
+  messages_per_channel: 100
+  delay_between_channels_seconds: 1
+
+digest:
+  default_top_k: 5
+  daily_relevance_floor: 0.2
+  weekly_relevance_floor: 0.4
+
+database:
+  url: "sqlite+aiosqlite:///data/digest.db"
