@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
 import structlog
@@ -13,7 +14,14 @@ from src.dedup.minhash import MinHashIndex
 from src.dedup.vector_store import SimilarResult, VectorStore
 from src.llm.client import OllamaClient
 from src.llm.prompts import DEDUP_PROMPT
-from src.pipelines.scrape import PipelineRunResult
+
+
+@dataclass
+class PipelineRunResult:
+    stage: str
+    processed: int = 0
+    failed: int = 0
+    skipped: int = 0
 
 log = structlog.get_logger()
 
