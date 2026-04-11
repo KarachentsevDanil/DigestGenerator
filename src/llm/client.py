@@ -6,6 +6,7 @@ import structlog
 from ollama import AsyncClient
 
 from src.config import OllamaConfig
+from src.llm.prompts import CLASSIFY_PROMPT, EXTRACT_KNOWLEDGE_PROMPT
 
 log = structlog.get_logger()
 
@@ -53,6 +54,19 @@ class OllamaClient:
         except (json.JSONDecodeError, KeyError):
             log.error("ollama_json_parse_failed_second_attempt")
             raise
+
+    async def classify_message(self, content: str, categories_block: str) -> dict:
+        """Classify a message against categories. Returns parsed result."""
+        prompt = CLASSIFY_PROMPT.format(
+            categories_block=categories_block,
+            message_content=content,
+        )
+        return await self.generate_json(prompt, temperature=0.1)
+
+    async def extract_knowledge(self, content: str) -> dict:
+        """Extract entity relationship triples from message content."""
+        prompt = EXTRACT_KNOWLEDGE_PROMPT.format(message_content=content)
+        return await self.generate_json(prompt, temperature=0.1)
 
     async def check_health(self) -> bool:
         """Check if Ollama is reachable and the model is available."""

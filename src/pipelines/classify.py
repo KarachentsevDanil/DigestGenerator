@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import UTC, datetime
 
 import structlog
@@ -9,8 +10,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.config import Settings
 from src.db.models import Category, Message
 from src.llm.client import OllamaClient
-from src.llm.prompts import CLASSIFY_PROMPT
-from src.pipelines.scrape import PipelineRunResult
+
+
+@dataclass
+class PipelineRunResult:
+    stage: str
+    processed: int = 0
+    failed: int = 0
+    skipped: int = 0
 
 log = structlog.get_logger()
 
@@ -101,12 +108,9 @@ async def run_classify(db: AsyncSession, settings: Settings) -> PipelineRunResul
 
     for i, msg in enumerate(messages):
         try:
-            prompt = CLASSIFY_PROMPT.format(
-                categories_block=categories_block,
-                message_content=msg.content[:4000],  # truncate very long messages
+            classification = await ollama_client.classify_message(
+                msg.content[:4000], categories_block
             )
-
-            classification = await ollama_client.generate_json(prompt, temperature=0.1)
 
             if not _validate_classification(classification):
                 log.warning("classify_invalid_output", msg_id=msg.id)

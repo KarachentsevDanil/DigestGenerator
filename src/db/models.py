@@ -145,6 +145,9 @@ class Message(Base):
     entities_json: Mapped[list | None] = mapped_column(JSON, nullable=True)
     classified_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
+    # Knowledge extraction (phase 7 v2)
+    relations_json: Mapped[list | None] = mapped_column(JSON, nullable=True)
+
     # Telegram metadata
     forwarded_from_channel: Mapped[str | None] = mapped_column(String(255), nullable=True)
     forwarded_message_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
@@ -217,3 +220,130 @@ class PipelineRun(Base):
     failed_count: Mapped[int] = mapped_column(Integer, default=0)
     skipped_count: Mapped[int] = mapped_column(Integer, default=0)
     error_detail: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+# ---------------------------------------------------------------------------
+# Knowledge Graph v2 models (Phase 7)
+# ---------------------------------------------------------------------------
+
+
+class KnowledgeEntity(Base):
+    __tablename__ = "knowledge_entities"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    canonical_name: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
+    display_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    entity_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    properties_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    mention_count: Mapped[int] = mapped_column(Integer, default=1)
+    embedding: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+
+    aliases: Mapped[list[EntityAlias]] = relationship(back_populates="entity")
+    outgoing_relations: Mapped[list[KnowledgeRelation]] = relationship(
+        back_populates="source_entity",
+        foreign_keys="KnowledgeRelation.source_entity_id",
+    )
+    incoming_relations: Mapped[list[KnowledgeRelation]] = relationship(
+        back_populates="target_entity",
+        foreign_keys="KnowledgeRelation.target_entity_id",
+    )
+    user_exposures: Mapped[list[UserEntityExposure]] = relationship(
+        back_populates="entity",
+    )
+
+
+class KnowledgeRelation(Base):
+    __tablename__ = "knowledge_relations"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    source_entity_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("knowledge_entities.id"), nullable=False
+    )
+    target_entity_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("knowledge_entities.id"), nullable=False
+    )
+    relation_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    confidence: Mapped[float] = mapped_column(Float, nullable=False)
+    properties_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    first_observed_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    last_observed_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    observation_count: Mapped[int] = mapped_column(Integer, default=1)
+    source_message_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("messages.id"), nullable=True
+    )
+
+    source_entity: Mapped[KnowledgeEntity] = relationship(
+        back_populates="outgoing_relations",
+        foreign_keys=[source_entity_id],
+    )
+    target_entity: Mapped[KnowledgeEntity] = relationship(
+        back_populates="incoming_relations",
+        foreign_keys=[target_entity_id],
+    )
+    source_message: Mapped[Message | None] = relationship()
+    user_exposures: Mapped[list[UserRelationExposure]] = relationship(
+        back_populates="relation",
+    )
+
+
+class EntityAlias(Base):
+    __tablename__ = "entity_aliases"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    alias: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
+    entity_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("knowledge_entities.id"), nullable=False
+    )
+
+    entity: Mapped[KnowledgeEntity] = relationship(back_populates="aliases")
+
+
+class UserEntityExposure(Base):
+    __tablename__ = "user_entity_exposure"
+    __table_args__ = (
+        UniqueConstraint("user_id", "entity_id", name="uq_user_entity_exposure"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False)
+    entity_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("knowledge_entities.id"), nullable=False
+    )
+    first_exposed_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    last_exposed_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    exposure_count: Mapped[int] = mapped_column(Integer, default=1)
+
+    user: Mapped[User] = relationship()
+    entity: Mapped[KnowledgeEntity] = relationship(back_populates="user_exposures")
+
+
+class UserRelationExposure(Base):
+    __tablename__ = "user_relation_exposure"
+    __table_args__ = (
+        UniqueConstraint("user_id", "relation_id", name="uq_user_relation_exposure"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False)
+    relation_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("knowledge_relations.id"), nullable=False
+    )
+    first_exposed_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    last_exposed_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    user: Mapped[User] = relationship()
+    relation: Mapped[KnowledgeRelation] = relationship(back_populates="user_exposures")
+
+
+class KnowledgeNarrative(Base):
+    __tablename__ = "knowledge_narratives"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    title: Mapped[str] = mapped_column(String(500), nullable=False)
+    entity_ids_json: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    first_message_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    last_message_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    message_count: Mapped[int] = mapped_column(Integer, default=1)
+    status: Mapped[str] = mapped_column(String(20), default="active")

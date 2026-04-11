@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -21,7 +21,6 @@ from src.db.models import (
     User,
     UserCategory,
 )
-from src.pipelines.scrape import PipelineRunResult
 
 log = structlog.get_logger()
 
@@ -29,15 +28,23 @@ _TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates"
 
 # Default category emojis
 CATEGORY_EMOJIS: dict[str, str] = {
-    "ai_ml": "🤖",
-    "crypto": "💰",
-    "tech_industry": "💻",
-    "geopolitics": "🌍",
-    "science": "🔬",
-    "finance": "📈",
-    "regulation": "⚖️",
-    "startups": "🚀",
+    "ai_ml": "\U0001f916",
+    "crypto": "\U0001f4b0",
+    "tech_industry": "\U0001f4bb",
+    "geopolitics": "\U0001f30d",
+    "science": "\U0001f52c",
+    "finance": "\U0001f4c8",
+    "regulation": "\u2696\ufe0f",
+    "startups": "\U0001f680",
 }
+
+
+@dataclass
+class PipelineRunResult:
+    stage: str
+    processed: int = 0
+    failed: int = 0
+    skipped: int = 0
 
 
 @dataclass
@@ -48,7 +55,6 @@ class DigestCandidate:
     confidence: float
     source_name: str
     cluster_size: int
-    novelty: float = 0.5
 
     @property
     def summary(self) -> str:
@@ -145,16 +151,15 @@ async def select_items(
             threshold = max(threshold, user.weekly_min_confidence)
 
         # Query classified primary messages in the time window
-        msgs_result = await db.execute(
-            select(Message)
-            .where(
-                Message.is_cluster_primary.is_(True),
-                Message.status == "classified",
-                Message.published_at >= window_start,
-                Message.id.notin_(already_sent) if already_sent else True,
-            )
-            .order_by(Message.relevance_score.desc())
+        query = select(Message).where(
+            Message.is_cluster_primary.is_(True),
+            Message.status == "classified",
+            Message.published_at >= window_start,
         )
+        if already_sent:
+            query = query.where(Message.id.notin_(already_sent))
+
+        msgs_result = await db.execute(query)
         messages = list(msgs_result.scalars().all())
 
         candidates: list[DigestCandidate] = []
@@ -180,11 +185,6 @@ async def select_items(
 
             cluster_size = await _get_cluster_size(db, msg)
 
-            # Compute novelty score
-            from src.knowledge.tracker import compute_novelty
-
-            novelty = await compute_novelty(db, user.id, msg)
-
             candidates.append(
                 DigestCandidate(
                     message=msg,
@@ -193,29 +193,20 @@ async def select_items(
                     confidence=cat_score,
                     source_name=source_name,
                     cluster_size=cluster_size,
-                    novelty=novelty,
                 )
             )
 
-        # Sort by composite ranking with novelty
+        # Ranking per spec:
+        # daily = category_confidence DESC, then relevance DESC
+        # weekly = relevance * category_confidence composite DESC
         if digest_type == "daily":
-            # daily_score = 0.4*confidence + 0.3*relevance + 0.3*novelty
             candidates.sort(
-                key=lambda c: (
-                    0.4 * c.confidence
-                    + 0.3 * c.relevance_score
-                    + 0.3 * c.novelty
-                ),
+                key=lambda c: (c.confidence, c.relevance_score),
                 reverse=True,
             )
         else:
-            # weekly_score = 0.35*confidence + 0.35*relevance + 0.3*novelty
             candidates.sort(
-                key=lambda c: (
-                    0.35 * c.confidence
-                    + 0.35 * c.relevance_score
-                    + 0.3 * c.novelty
-                ),
+                key=lambda c: c.relevance_score * c.confidence,
                 reverse=True,
             )
 
@@ -264,7 +255,7 @@ def render_digest(
         categories[escape_markdown_v2(cat_name)] = escaped_items
 
     return template.render(
-        date=escape_markdown_v2(datetime.now(UTC).strftime("%Y\\-%m\\-%d")),
+        date=escape_markdown_v2(datetime.now(UTC).strftime("%Y-%m-%d")),
         categories=categories,
         emojis=CATEGORY_EMOJIS,
         total_items=total_items,
@@ -332,22 +323,12 @@ async def generate_user_digest(
 
     await db.commit()
 
-    # Update user knowledge graph with entities from delivered items
-    from src.knowledge.tracker import update_user_knowledge
-
-    all_digest_items_result = await db.execute(
-        select(DigestItem).where(DigestItem.digest_id == digest.id)
-    )
-    all_digest_items = list(all_digest_items_result.scalars().all())
-    new_entities = await update_user_knowledge(db, user.id, all_digest_items)
-
     log.info(
         "digest_generated",
         user_id=user.id,
         type=digest_type,
         items=total_items,
         messages_sent=len(message_ids),
-        new_entities=new_entities,
     )
 
     return True
