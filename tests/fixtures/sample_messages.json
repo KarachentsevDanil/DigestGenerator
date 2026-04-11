@@ -1,0 +1,61 @@
+[
+  {
+    "external_id": "1001",
+    "content": "Google DeepMind has released Gemma 4, their latest open-source AI model. The model achieves state-of-the-art performance on multiple benchmarks while being significantly smaller than competitors. Available in two variants: e2 (2B) and e4 (4B parameters).",
+    "content_url": "https://blog.google/technology/ai/gemma-4/",
+    "media_type": "text",
+    "source": "@ai_news_daily",
+    "category": "ai_ml"
+  },
+  {
+    "external_id": "1002",
+    "content": "Google DeepMind releases Gemma 4 open source AI model with SOTA benchmark results. Two variants available: e2 and e4. Outperforms previous generation.",
+    "content_url": null,
+    "media_type": "text",
+    "source": "@tech_updates",
+    "category": "ai_ml",
+    "note": "Near-duplicate of 1001 — same news, different wording"
+  },
+  {
+    "external_id": "1003",
+    "content": "Bitcoin surges past $100,000 as institutional investors pour in. BlackRock's Bitcoin ETF sees record inflows of $2.1B in a single day. Analysts predict further growth.",
+    "content_url": "https://example.com/bitcoin-100k",
+    "media_type": "text",
+    "source": "@crypto_alerts",
+    "category": "crypto"
+  },
+  {
+    "external_id": "1004",
+    "content": "EU Parliament passes landmark AI Act with strict regulations for high-risk systems. Companies have 24 months to comply. Penalties up to 7% of global revenue.",
+    "content_url": "https://example.com/eu-ai-act",
+    "media_type": "text",
+    "source": "@eu_policy_watch",
+    "category": "regulation"
+  },
+  {
+    "external_id": "1005",
+    "content": "Anthropic raises $5B Series D at $50B valuation. Funding led by Google and Spark Capital. Company plans to expand Claude model family and enterprise offerings.",
+    "content_url": null,
+    "media_type": "text",
+    "source": "@startup_news",
+    "category": "tech_industry"
+  },
+  {
+    "external_id": "1006",
+    "content": "Daily weather update: Moscow expects light rain today with temperatures around 12°C. Carry an umbrella if going out.",
+    "content_url": null,
+    "media_type": "text",
+    "source": "@moscow_weather",
+    "category": "noise",
+    "note": "Low relevance — noise/spam"
+  },
+  {
+    "external_id": "1007",
+    "content": "Breaking: Google's new open-source model Gemma 4 is here. It beats GPT-4 on several benchmarks. Available for download now. Two sizes: 2B and 4B params.",
+    "content_url": "https://example.com/gemma4-launch",
+    "media_type": "text",
+    "source": "@ml_updates",
+    "category": "ai_ml",
+    "note": "Semantic duplicate of 1001 — same story, very different text"
+  }
+]
