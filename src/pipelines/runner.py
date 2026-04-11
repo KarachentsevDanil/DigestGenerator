@@ -9,7 +9,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.config import Settings
 from src.db.models import Message, PipelineRun
-from src.pipelines.scrape import PipelineRunResult
+from dataclasses import dataclass
+
+
+@dataclass
+class PipelineRunResult:
+    stage: str
+    processed: int = 0
+    failed: int = 0
+    skipped: int = 0
 
 log = structlog.get_logger()
 
@@ -18,6 +26,7 @@ _RETRY_STATUS_MAP = {
     "embed_failed": "unprocessed",
     "dedup_failed": "embedded",
     "classify_failed": "deduplicated",
+    "knowledge_extract_failed": "classified",
 }
 
 
@@ -67,6 +76,8 @@ async def run_all_stages(
       # Scrape + dedup + classify every 4 hours
       0 */4 * * *  curl -sf -X POST http://localhost:8000/pipeline/run-all
     """
+    from src.knowledge.extractor import run_extract_knowledge
+    from src.knowledge.graph_builder import run_build_graph
     from src.pipelines.classify import run_classify
     from src.pipelines.deduplicate import run_deduplicate
     from src.pipelines.scrape import run_scrape
@@ -77,6 +88,8 @@ async def run_all_stages(
         ("scrape", run_scrape),
         ("deduplicate", run_deduplicate),
         ("classify", run_classify),
+        ("extract_knowledge", run_extract_knowledge),
+        ("build_graph", run_build_graph),
     ]
 
     for stage_name, stage_fn in stages:

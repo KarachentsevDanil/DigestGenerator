@@ -226,6 +226,48 @@ async def classify(
     )
 
 
+@app.post("/extract-knowledge", response_model=PipelineResponse)
+async def extract_knowledge(
+    db: AsyncSession = Depends(get_db),
+    settings: Settings = Depends(get_app_settings),
+):
+    """Run knowledge extraction: SLM-based triple extraction from classified messages."""
+    from src.knowledge.extractor import run_extract_knowledge
+
+    start = time.time()
+    result = await run_extract_knowledge(db, settings)
+    duration = time.time() - start
+
+    return PipelineResponse(
+        stage=result.stage,
+        processed=result.processed,
+        failed=result.failed,
+        skipped=result.skipped,
+        duration_seconds=round(duration, 2),
+    )
+
+
+@app.post("/build-graph", response_model=PipelineResponse)
+async def build_graph(
+    db: AsyncSession = Depends(get_db),
+    settings: Settings = Depends(get_app_settings),
+):
+    """Build/update knowledge graph from extracted triples. Pure computation, no SLM."""
+    from src.knowledge.graph_builder import run_build_graph
+
+    start = time.time()
+    result = await run_build_graph(db, settings)
+    duration = time.time() - start
+
+    return PipelineResponse(
+        stage=result.stage,
+        processed=result.processed,
+        failed=result.failed,
+        skipped=result.skipped,
+        duration_seconds=round(duration, 2),
+    )
+
+
 @app.post("/generate-digest", response_model=PipelineResponse)
 async def generate_digest(
     digest_type: str = Query(default="daily", pattern="^(daily|weekly)$"),
