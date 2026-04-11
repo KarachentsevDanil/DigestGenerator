@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import time
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 import structlog
 from fastapi import Depends, FastAPI, Query, Request, Response
@@ -29,15 +30,23 @@ def _configure_logging() -> None:
             structlog.contextvars.merge_contextvars,
             structlog.processors.add_log_level,
             structlog.processors.TimeStamper(fmt="iso"),
-            structlog.dev.ConsoleRenderer(),
+            structlog.processors.JSONRenderer(),
         ],
         logger_factory=structlog.PrintLoggerFactory(),
         cache_logger_on_first_use=True,
     )
 
 
+def _ensure_data_dirs() -> None:
+    """Ensure runtime data directories exist."""
+    base = Path(__file__).resolve().parent.parent / "data"
+    (base / "chromadb").mkdir(parents=True, exist_ok=True)
+    (base / "sessions").mkdir(parents=True, exist_ok=True)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    _ensure_data_dirs()
     _configure_logging()
     log = structlog.get_logger()
     settings = get_settings()
